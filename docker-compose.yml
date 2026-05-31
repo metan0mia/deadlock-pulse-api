@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pulse
+      POSTGRES_PASSWORD: pulse
+      POSTGRES_DB: deadlock_pulse
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulse -d deadlock_pulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: docker-dev-change-me-in-production
+      DATABASE_URL: postgresql+asyncpg://pulse:pulse@db:5432/deadlock_pulse
+      DEADLOCK_API_KEY: ${DEADLOCK_API_KEY:-}
+      POLL_INTERVAL_SECONDS: 45
+      ENABLE_POLLER: "true"
+      CORS_ORIGINS: "*"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

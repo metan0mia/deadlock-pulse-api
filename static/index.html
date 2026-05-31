@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deadlock Pulse</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --accent: #7cffb2;
+      --accent2: #ff6b9d;
+      --text: #e8eef7;
+      --muted: #8b98a9;
+      --border: #243041;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #162033 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 2rem; margin: 0 0 8px; }
+    .tagline { color: var(--muted); margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .card h2 { margin: 0 0 12px; font-size: 1rem; color: var(--accent); }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0d1219;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+    button {
+      background: linear-gradient(135deg, var(--accent), #4fd1ff);
+      color: #041018;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--accent2);
+      border: 1px solid var(--accent2);
+    }
+    .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+    .pill {
+      background: #0d1219;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.85rem;
+    }
+    pre {
+      background: #0d1219;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      font-size: 0.8rem;
+      max-height: 260px;
+    }
+    .live { color: var(--accent); font-weight: 700; }
+    a { color: #4fd1ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Deadlock Pulse</h1>
+    <p class="tagline">
+      Backend-сервис: следит за Steam ID через Deadlock API, пишет события в SQL, шлёт webhooks.
+      <a href="/docs" target="_blank">OpenAPI →</a>
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h2>1. Авторизация</h2>
+        <label>Email</label>
+        <input id="email" type="email" placeholder="you@example.com" />
+        <label>Пароль</label>
+        <input id="password" type="password" placeholder="min 8 chars" />
+        <button onclick="register()">Register</button>
+        <button class="secondary" onclick="login()" style="margin-left:8px">Login</button>
+        <div class="stats"><span class="pill" id="authState">Not logged in</span></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Watch list</h2>
+        <label>Steam ID64</label>
+        <input id="steamId" placeholder="76561198000000000" />
+        <label>Label</label>
+        <input id="label" placeholder="target nickname" />
+        <button onclick="addWatch()">Add watch</button>
+        <button class="secondary" onclick="loadWatches()" style="margin-left:8px">Refresh</button>
+        <pre id="watches">[]</pre>
+      </div>
+
+      <div class="card">
+        <h2>3. Status</h2>
+        <button onclick="loadStatus()">Refresh status</button>
+        <pre id="status">{}</pre>
+      </div>
+
+      <div class="card">
+        <h2>4. Hero analytics (raw SQL)</h2>
+        <button onclick="loadHeroes()">Load top heroes</button>
+        <pre id="heroes">[]</pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Recent events</h2>
+      <button onclick="loadEvents()">Refresh events</button>
+      <pre id="events">[]</pre>
+    </div>
+  </div>
+
+  <script>
+    let token = localStorage.getItem("pulse_token") || "";
+
+    function setAuthState() {
+      document.getElementById("authState").textContent = token ? "Logged in ✓" : "Not logged in";
+    }
+
+    async function api(path, options = {}) {
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(path, { ...options, headers });
+      const text = await res.text();
+      let data = text;
+      try { data = JSON.parse(text); } catch {}
+      if (!res.ok) throw new Error(typeof data === "object" ? JSON.stringify(data) : text);
+      return data;
+    }
+
+    async function register() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      await api("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) });
+      alert("Registered — now login");
+    }
+
+    async function login() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const body = new URLSearchParams({ username: email, password });
+      const res = await fetch("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(JSON.stringify(data));
+      token = data.access_token;
+      localStorage.setItem("pulse_token", token);
+      setAuthState();
+      loadWatches();
+    }
+
+    async function addWatch() {
+      try {
+        await api("/watches", {
+          method: "POST",
+          body: JSON.stringify({
+            steam_id64: document.getElementById("steamId").value,
+            label: document.getElementById("label").value,
+          }),
+        });
+        loadWatches();
+      } catch (e) { alert(e.message); }
+    }
+
+    async function loadWatches() {
+      try {
+        const data = await api("/watches");
+        document.getElementById("watches").textContent = JSON.stringify(data, null, 2);
+      } catch (e) { document.getElementById("watches").textContent = e.message; }
+    }
+
+    async function loadStatus() {
+      const data = await fetch("/status").then(r => r.json());
+      document.getElementById("status").textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function loadHeroes() {
+      try {
+        const data = await api("/analytics/heroes");
+        document.getElementById("heroes").textContent = JSON.stringify(data, null, 2);
+      } catch (e) { document.getElementById("heroes").textContent = e.message; }
+    }
+
+    async function loadEvents() {
+      try {
+        const data = await api("/events?limit=20");
+        document.getElementById("events").textContent = JSON.stringify(data, null, 2);
+      } catch (e) { document.getElementById("events").textContent = e.message; }
+    }
+
+    setAuthState();
+    loadStatus();
+  </script>
+</body>
+</html>
