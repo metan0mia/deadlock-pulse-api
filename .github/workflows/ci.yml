@@ -58,7 +58,8 @@ jobs:
 
       - name: Compose smoke test
         run: |
-          docker compose up -d --wait
+          docker compose up -d --wait --wait-timeout 180
           curl -sf http://localhost:8000/health
           curl -sf http://localhost:8000/status
+          docker compose logs api
           docker compose down -v
