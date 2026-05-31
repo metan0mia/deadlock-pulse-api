@@ -46,7 +46,7 @@ jobs:
           SECRET_KEY: ci-test-secret-key-min-32-characters
           DATABASE_URL: postgresql+asyncpg://pulse:pulse@localhost:5432/deadlock_pulse_test
           ENABLE_POLLER: "false"
-        run: pytest -v
+        run: python -m pytest -v
 
   docker:
     runs-on: ubuntu-latest
